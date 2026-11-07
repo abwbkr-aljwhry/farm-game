@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>مزرعتي</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#7a4b1e">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="مزرعتي">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body { font-family: Tahoma, Arial, sans-serif; background: #cfe9b8; color: #3b2a14; min-height: 100vh; user-select: none; -webkit-user-select: none; }
+  #app { max-width: 720px; margin: 0 auto; padding: 10px; }
+  .top { background: #7a4b1e; color: #fff; border-radius: 14px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; }
+  .top .who { font-size: 20px; }
+  .top .stats span { margin-inline-start: 12px; font-weight: bold; }
+  .tabs { display: flex; gap: 5px; margin: 10px 0; }
+  .tabs button { flex: 1; padding: 10px 2px; border: none; border-radius: 10px; background: #e8d3a8; font-size: 13px; cursor: pointer; font-family: inherit; }
+  .tabs button.on { background: #f2b632; font-weight: bold; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; }
+  .card { background: #fff7e0; border: 3px solid #b98a4e; border-radius: 12px; padding: 10px; text-align: center; min-height: 110px; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 4px; }
+  .plot { background: #9b6a3a; border-color: #6e4521; color: #fff; cursor: pointer; }
+  .plot.empty { background: #b98a4e; }
+  .plot.ready { background: #4caf50; border-color: #2e7d32; animation: pulse 1s infinite; }
+  @keyframes pulse { 50% { transform: scale(1.05); } }
+  .big { font-size: 38px; }
+  .small { font-size: 13px; }
+  button.btn { background: #f2b632; border: none; border-radius: 8px; padding: 7px 12px; font-size: 14px; cursor: pointer; font-family: inherit; white-space: nowrap; }
+  button.btn:disabled { background: #ccc; cursor: not-allowed; }
+  button.btn.green { background: #66bb6a; color: #fff; }
+  button.btn.red { background: #e57373; color: #fff; }
+  button.btn.gem { background: #4fc3f7; color: #00344d; }
+  .row { display: flex; justify-content: space-between; align-items: center; background: #fff7e0; border: 2px solid #b98a4e; border-radius: 10px; padding: 10px; margin-bottom: 8px; gap: 8px; }
+  .bar { height: 8px; background: #0003; border-radius: 4px; width: 100%; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: #ffd54f; }
+  h3 { margin: 12px 0 8px; }
+  #modal { position: fixed; inset: 0; background: #0008; display: flex; align-items: center; justify-content: center; padding: 12px; z-index: 10; }
+  #modal.hidden { display: none; }
+  .box { background: #fff7e0; border-radius: 14px; padding: 14px; max-width: 460px; width: 100%; max-height: 85vh; overflow: auto; }
+  #toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: #333; color: #fff; padding: 9px 16px; border-radius: 20px; opacity: 0; transition: opacity .3s; pointer-events: none; z-index: 20; }
+  #toast.show { opacity: 1; }
+  .chars { display: flex; gap: 10px; justify-content: center; margin: 14px 0; }
+  .chars .card { cursor: pointer; width: 120px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="modal" class="hidden"></div>
+<div id="toast"></div>
+
+<script>
+// ============ 1) بيانات اللعبة (عدّل الأرقام كما تحب) ============
+const CROPS = {
+  wheat:      { name: 'قمح',    icon: '🌾', cost: 5,  time: 10, price: 12, level: 1 },
+  barley:     { name: 'شعير',   icon: '🌿', cost: 5,  time: 12, price: 13, level: 1 },
+  carrot:     { name: 'جزر',    icon: '🥕', cost: 8,  time: 15, price: 20, level: 1 },
+  tomato:     { name: 'طماطم',  icon: '🍅', cost: 10, time: 20, price: 26, level: 2 },
+  cucumber:   { name: 'خيار',   icon: '🥒', cost: 10, time: 20, price: 25, level: 2 },
+  pepper:     { name: 'فلفل',   icon: '🌶️', cost: 12, time: 25, price: 32, level: 2 },
+  strawberry: { name: 'فراولة', icon: '🍓', cost: 15, time: 30, price: 42, level: 3 }
+};
+const TREES = {
+  apple:  { name: 'شجرة تفاح',   icon: '🍎', cost: 60,  time: 40, price: 12, level: 2 },
+  orange: { name: 'شجرة برتقال', icon: '🍊', cost: 80,  time: 45, price: 15, level: 3 },
+  olive:  { name: 'شجرة زيتون',  icon: '🫒', cost: 100, time: 50, price: 18, level: 4 }
+};
+const ANIMALS = {
+  chicken: { name: 'دجاجة', icon: '🐔', product: '🥚 بيض',  cost: 50,  feed: 5,  time: 15, price: 18, level: 1 },
+  sheep:   { name: 'خروف',  icon: '🐑', product: '🧶 صوف',  cost: 120, feed: 10, time: 30, price: 45, level: 2 },
+  goat:    { name: 'ماعز',  icon: '🐐', product: '🥛 حليب', cost: 150, feed: 12, time: 35, price: 50, level: 3 },
+  cow:     { name: 'بقرة',  icon: '🐄', product: '🥛 حليب', cost: 250, feed: 20, time: 45, price: 85, level: 4 }
+};
+const CHARS = [
+  { icon: '👨‍🌾', name: 'المزارع' },
+  { icon: '👩‍🌾', name: 'المزارعة' },
+  { icon: '🧑‍🌾', name: 'الفلاح' }
+];
+const TASKS = [
+  { id: 't1', text: 'احصد 5 محاصيل',          stat: 'harvest', goal: 5,   reward: 30,  gems: 1 },
+  { id: 't2', text: 'ازرع شجرة واحدة',        stat: 'trees',   goal: 1,   reward: 40,  gems: 1 },
+  { id: 't3', text: 'اشترِ حيوانًا',           stat: 'bought',  goal: 1,   reward: 40,  gems: 1 },
+  { id: 't4', text: 'اجمع 5 منتجات حيوانية',  stat: 'collect', goal: 5,   reward: 60,  gems: 2 },
+  { id: 't5', text: 'اكسب 300 عملة من البيع', stat: 'earned',  goal: 300, reward: 100, gems: 3 },
+  { id: 't6', text: 'احصد 25 محصولًا',        stat: 'harvest', goal: 25,  reward: 150, gems: 5 }
+];
+// إعدادات المتجر
+const SHOP = {
+  fertCost: 60,        // سعر السماد بالعملات
+  speedGems: 5,        // تسريع فوري بالجواهر
+  plotGems: 10,        // قطعة أرض بالجواهر
+  priceGems: 20,       // رفع الأسعار بالجواهر
+  priceMax: 3,         // أقصى عدد مرات رفع الأسعار
+  gemToCoin: 100,      // الجوهرة الواحدة = كم عملة
+  coinToGem: 1000      // كم عملة لشراء جوهرة
+};
+
+// ============ 2) حالة اللعبة والحفظ ============
+const SAVE_KEY = 'farm_save_v1';
+function newState() {
+  return {
+    money: 50, gems: 5, xp: 0, char: null, lvlGiven: 1, priceLvl: 0,
+    plots: [null, null, null, null],
+    animals: [],
+    inv: {},
+    stats: { harvest: 0, trees: 0, bought: 0, collect: 0, earned: 0 },
+    claimed: {}
+  };
+}
+let S;
+let tab = 'farm';
+function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); } catch (e) {} }
+const level = () => 1 + Math.floor(S.xp / 40);
+const mult = () => 1 + 0.25 * S.priceLvl;
+try {
+  const saved = JSON.parse(localStorage.getItem(SAVE_KEY));
+  S = saved ? Object.assign(newState(), saved) : newState();
+  S.stats = Object.assign(newState().stats, S.stats || {});
+} catch (e) { S = newState(); }
+
+// ============ 3) أدوات مساعدة ============
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toast.id); toast.id = setTimeout(() => t.classList.remove('show'), 1800);
+}
+function addInv(key, n) { S.inv[key] = (S.inv[key] || 0) + n; }
+function itemInfo(key) {
+  const [type, id] = key.split(':');
+  let it;
+  if (type === 'crop')      it = { icon: CROPS[id].icon,  name: CROPS[id].name,  price: CROPS[id].price };
+  else if (type === 'tree') it = { icon: TREES[id].icon,  name: 'ثمار ' + TREES[id].name.replace('شجرة ', ''), price: TREES[id].price };
+  else                      it = { icon: ANIMALS[id].product.split(' ')[0], name: ANIMALS[id].product.split(' ')[1], price: ANIMALS[id].price };
+  it.price = Math.round(it.price * mult());
+  return it;
+}
+function secsLeft(t) { return Math.max(0, Math.ceil((t - Date.now()) / 1000)); }
+function pct(start, end) { return Math.min(100, Math.max(0, ((Date.now() - start) / (end - start)) * 100)); }
+function checkLevel() {
+  const L = level();
+  if (L > S.lvlGiven) {
+    const n = L - S.lvlGiven; S.gems += 3 * n; S.lvlGiven = L;
+    toast('🎉 مستوى ' + L + '  +' + (3 * n) + ' 💎');
+  }
+}
+
+// ============ 4) الرسم على الشاشة ============
+function render() {
+  const app = document.getElementById('app');
+  if (S.char === null) {
+    app.innerHTML = `<div class="top"><span class="who">🌻 مزرعتي</span></div>
+      <h3 style="text-align:center">اختر شخصيتك</h3>
+      <div class="chars">${CHARS.map((c, i) => `<div class="card" data-a="char" data-i="${i}"><div class="big">${c.icon}</div>${c.name}</div>`).join('')}</div>`;
+    return;
+  }
+  const ch = CHARS[S.char];
+  let body = '';
+  if (tab === 'farm') body = renderFarm();
+  if (tab === 'animals') body = renderAnimals();
+  if (tab === 'inv') body = renderInv();
+  if (tab === 'shop') body = renderShop();
+  if (tab === 'tasks') body = renderTasks();
+  const tabs = [['farm','🌱 المزرعة'],['animals','🐑 الحيوانات'],['inv','🧺 المخزن'],['shop','🛒 المتجر'],['tasks','📋 المهام']];
+  app.innerHTML = `
+    <div class="top">
+      <span class="who">${ch.icon} ${ch.name}</span>
+      <span class="stats"><span>💰 ${S.money}</span><span>💎 ${S.gems}</span><span>⭐ م${level()}</span></span>
+    </div>
+    <div class="tabs">${tabs.map(t => `<button data-a="tab" data-t="${t[0]}" class="${tab === t[0] ? 'on' : ''}">${t[1]}</button>`).join('')}</div>
+    ${body}
+    <p class="small" style="text-align:center;margin-top:20px"><button class="btn red" data-a="reset">🗑️ ابدأ من جديد</button></p>`;
+}
+
+function plotCost() { return 40 * (S.plots.length - 3); }
+
+function renderFarm() {
+  const cards = S.plots.map((p, i) => {
+    if (!p) return `<div class="card plot empty" data-a="plot" data-i="${i}"><div class="big">➕</div><span class="small">قطعة فارغة</span></div>`;
+    if (p.kind === 'crop') {
+      const c = CROPS[p.id], left = secsLeft(p.readyAt);
+      if (left === 0) return `<div class="card plot ready" data-a="harvest" data-i="${i}"><div class="big">${c.icon}</div><span class="small">جاهز! اضغط للحصاد</span></div>`;
+      return `<div class="card plot"><div class="big">🌱</div><span class="small">${c.name} - ${left} ث</span><div class="bar"><i style="width:${pct(p.readyAt - c.time * 1000, p.readyAt)}%"></i></div></div>`;
+    }
+    const t = TREES[p.id], left = secsLeft(p.readyAt);
+    if (left === 0) return `<div class="card plot ready" data-a="harvest" data-i="${i}"><div class="big">${t.icon}</div><span class="small">اقطف الثمار</span></div>`;
+    return `<div class="card plot"><div class="big">🌳</div><span class="small">${t.name} - ${left} ث</span><div class="bar"><i style="width:${pct(p.readyAt - t.time * 1000, p.readyAt)}%"></i></div></div>`;
+  }).join('');
+  return `<div class="grid">${cards}</div>
+    <p style="text-align:center;margin-top:12px"><button class="btn green" data-a="buyplot" ${S.money < plotCost() ? 'disabled' : ''}>🟫 اشترِ قطعة أرض (${plotCost()} 💰)</button></p>`;
+}
+
+function renderAnimals() {
+  const owned = S.animals.map((a, i) => {
+    const d = ANIMALS[a.id];
+    if (a.state === 'hungry') return `<div class="card"><div class="big">${d.icon}</div><span class="small">جائعة</span><button class="btn" data-a="feed" data-i="${i}" ${S.money < d.feed ? 'disabled' : ''}>أطعم (${d.feed} 💰)</button></div>`;
+    const left = secsLeft(a.readyAt);
+    if (left === 0) return `<div class="card plot ready" data-a="collect" data-i="${i}"><div class="big">${d.icon}</div><span class="small">اجمع ${d.product}</span></div>`;
+    return `<div class="card"><div class="big">${d.icon}</div><span class="small">تنتج... ${left} ث</span><div class="bar"><i style="width:${pct(a.readyAt - d.time * 1000, a.readyAt)}%"></i></div></div>`;
+  }).join('');
+  const shop = Object.entries(ANIMALS).map(([id, d]) => {
+    const locked = level() < d.level;
+    return `<div class="row"><span>${d.icon} ${d.name} <span class="small">(تنتج ${d.product})</span></span>
+      <button class="btn" data-a="buyanimal" data-id="${id}" ${locked || S.money < d.cost ? 'disabled' : ''}>${locked ? '🔒 مستوى ' + d.level : d.cost + ' 💰'}</button></div>`;
+  }).join('');
+  return `<h3>حيواناتي</h3>${owned ? `<div class="grid">${owned}</div>` : '<p class="small">ليس عندك حيوانات بعد.</p>'}<h3>شراء حيوانات</h3>${shop}`;
+}
+
+function renderInv() {
+  const keys = Object.keys(S.inv).filter(k => S.inv[k] > 0);
+  if (!keys.length) return '<p style="text-align:center;margin-top:20px">المخزن فارغ. احصد أو اجمع منتجات أولًا.</p>';
+  let total = 0;
+  const rows = keys.map(k => {
+    const it = itemInfo(k), n = S.inv[k]; total += n * it.price;
+    return `<div class="row"><span>${it.icon} ${it.name} × ${n}</span><span class="small">${it.price} 💰 للواحدة</span></div>`;
+  }).join('');
+  return `${rows}<p style="text-align:center;margin-top:12px"><button class="btn green" data-a="sellall">💵 بِع كل شيء (${total} 💰)</button></p>`;
+}
+
+function renderShop() {
+  const maxed = S.priceLvl >= SHOP.priceMax;
+  return `
+    <h3>🛒 بالعملات 💰</h3>
+    <div class="row"><span>🧪 سماد<br><span class="small">يختصر نصف الوقت المتبقي لكل المحاصيل والأشجار والحيوانات</span></span>
+      <button class="btn" data-a="fert" ${S.money < SHOP.fertCost ? 'disabled' : ''}>${SHOP.fertCost} 💰</button></div>
+    <div class="row"><span>🟫 قطعة أرض جديدة</span>
+      <button class="btn" data-a="buyplot" ${S.money < plotCost() ? 'disabled' : ''}>${plotCost()} 💰</button></div>
+
+    <h3>💎 بالجواهر</h3>
+    <div class="row"><span>⚡ تسريع فوري<br><span class="small">كل شيء ينمو يصبح جاهزًا الآن</span></span>
+      <button class="btn gem" data-a="speedall" ${S.gems < SHOP.speedGems ? 'disabled' : ''}>${SHOP.speedGems} 💎</button></div>
+    <div class="row"><span>🟫 قطعة أرض فورًا</span>
+      <button class="btn gem" data-a="gemplot" ${S.gems < SHOP.plotGems ? 'disabled' : ''}>${SHOP.plotGems} 💎</button></div>
+    <div class="row"><span>📈 رفع أسعار البيع +25%<br><span class="small">المستوى الحالي: ${S.priceLvl} / ${SHOP.priceMax}</span></span>
+      <button class="btn gem" data-a="pricelvl" ${maxed || S.gems < SHOP.priceGems ? 'disabled' : ''}>${maxed ? 'مكتمل ✅' : SHOP.priceGems + ' 💎'}</button></div>
+
+    <h3>🔄 التحويل</h3>
+    <div class="row"><span>💎 ← 💰<br><span class="small">1 جوهرة = ${SHOP.gemToCoin} عملة</span></span>
+      <button class="btn gem" data-a="gem2coin" ${S.gems < 1 ? 'disabled' : ''}>حوّل جوهرة</button></div>
+    <div class="row"><span>💰 ← 💎<br><span class="small">${SHOP.coinToGem} عملة = 1 جوهرة</span></span>
+      <button class="btn" data-a="coin2gem" ${S.money < SHOP.coinToGem ? 'disabled' : ''}>${SHOP.coinToGem} 💰</button></div>
+    <p class="small" style="margin-top:8px">💡 تحصل على الجواهر من ترقية المستوى، ومن المهام، ومن حصاد نادر.</p>`;
+}
+
+function renderTasks() {
+  return TASKS.map(t => {
+    const cur = Math.min(S.stats[t.stat], t.goal), done = cur >= t.goal, got = S.claimed[t.id];
+    return `<div class="row"><span>${t.text}<br><span class="small">${cur} / ${t.goal} — المكافأة ${t.reward} 💰 + ${t.gems} 💎</span></span>
+      ${got ? '✅' : `<button class="btn green" data-a="claim" data-id="${t.id}" ${done ? '' : 'disabled'}>استلم</button>`}</div>`;
+  }).join('');
+}
+
+function openModal(html) { const m = document.getElementById('modal'); m.innerHTML = `<div class="box">${html}<p style="text-align:center;margin-top:10px"><button class="btn" data-a="close">إغلاق</button></p></div>`; m.classList.remove('hidden'); }
+function closeModal() { document.getElementById('modal').classList.add('hidden'); }
+
+// ============ 5) الأفعال (ماذا يحدث عند الضغط) ============
+const actions = {
+  char(d) { S.char = +d.i; },
+  tab(d) { tab = d.t; },
+  close() { closeModal(); },
+  plot(d) {
+    const crops = Object.entries(CROPS).map(([id, c]) => {
+      const locked = level() < c.level;
+      return `<div class="row"><span>${c.icon} ${c.name} <span class="small">(${c.time} ث ← ${c.price} 💰)</span></span>
+        <button class="btn" data-a="plant" data-k="crop" data-id="${id}" data-i="${d.i}" ${locked || S.money < c.cost ? 'disabled' : ''}>${locked ? '🔒 م' + c.level : c.cost + ' 💰'}</button></div>`;
+    }).join('');
+    const trees = Object.entries(TREES).map(([id, t]) => {
+      const locked = level() < t.level;
+      return `<div class="row"><span>${t.icon} ${t.name} <span class="small">(3 ثمار كل ${t.time} ث)</span></span>
+        <button class="btn" data-a="plant" data-k="tree" data-id="${id}" data-i="${d.i}" ${locked || S.money < t.cost ? 'disabled' : ''}>${locked ? '🔒 م' + t.level : t.cost + ' 💰'}</button></div>`;
+    }).join('');
+    openModal(`<h3>ماذا تزرع؟</h3>${crops}<h3>أشجار</h3>${trees}`);
+    return 'nosave';
+  },
+  plant(d) {
+    const src = d.k === 'crop' ? CROPS[d.id] : TREES[d.id];
+    if (S.money < src.cost) return toast('فلوسك لا تكفي');
+    S.money -= src.cost;
+    S.plots[+d.i] = { kind: d.k, id: d.id, readyAt: Date.now() + src.time * 1000 };
+    if (d.k === 'tree') { S.stats.trees++; S.xp += 5; }
+    closeModal();
+  },
+  harvest(d) {
+    const p = S.plots[+d.i];
+    if (!p || Date.now() < p.readyAt) return;
+    if (p.kind === 'crop') {
+      addInv('crop:' + p.id, 1); S.stats.harvest++; S.xp += 2;
+      S.plots[+d.i] = null;
+      toast('حصدت ' + CROPS[p.id].icon);
+    } else {
+      addInv('tree:' + p.id, 3); S.stats.harvest += 3; S.xp += 4;
+      p.readyAt = Date.now() + TREES[p.id].time * 1000;
+      toast('قطفت 3 × ' + TREES[p.id].icon);
+    }
+    if (Math.random() < 0.04) { S.gems++; toast('✨ وجدت جوهرة نادرة! +1 💎'); }
+  },
+  buyplot() {
+    if (S.money < plotCost()) return;
+    S.money -= plotCost(); S.plots.push(null);
+    toast('🟫 قطعة جديدة');
+  },
+  gemplot() {
+    if (S.gems < SHOP.plotGems) return;
+    S.gems -= SHOP.plotGems; S.plots.push(null);
+    toast('🟫 قطعة جديدة');
+  },
+  buyanimal(d) {
+    const a = ANIMALS[d.id];
+    if (S.money < a.cost || level() < a.level) return;
+    S.money -= a.cost; S.stats.bought++;
+    S.animals.push({ id: d.id, state: 'hungry', readyAt: 0 });
+  },
+  feed(d) {
+    const a = S.animals[+d.i], def = ANIMALS[a.id];
+    if (S.money < def.feed) return toast('فلوسك لا تكفي');
+    S.money -= def.feed; a.state = 'producing'; a.readyAt = Date.now() + def.time * 1000;
+  },
+  collect(d) {
+    const a = S.animals[+d.i];
+    if (Date.now() < a.readyAt) return;
+    addInv('animal:' + a.id, 1); S.stats.collect++; S.xp += 3;
+    a.state = 'hungry'; a.readyAt = 0;
+    toast('جمعت ' + ANIMALS[a.id].product);
+  },
+  sellall() {
+    let total = 0;
+    for (const k in S.inv) total += S.inv[k] * itemInfo(k).price;
+    S.money += total; S.stats.earned += total; S.inv = {};
+    toast('بعت بـ ' + total + ' 💰');
+  },
+  claim(d) {
+    const t = TASKS.find(x => x.id === d.id);
+    if (S.stats[t.stat] >= t.goal && !S.claimed[t.id]) {
+      S.claimed[t.id] = true; S.money += t.reward; S.gems += t.gems; S.xp += 10;
+      toast('+' + t.reward + ' 💰  +' + t.gems + ' 💎');
+    }
+  },
+  fert() {
+    if (S.money < SHOP.fertCost) return;
+    const now = Date.now(); let n = 0;
+    S.plots.forEach(p => { if (p && p.readyAt > now) { p.readyAt = now + (p.readyAt - now) / 2; n++; } });
+    S.animals.forEach(a => { if (a.state === 'producing' && a.readyAt > now) { a.readyAt = now + (a.readyAt - now) / 2; n++; } });
+    if (!n) return toast('لا يوجد شيء ينمو الآن');
+    S.money -= SHOP.fertCost; toast('🧪 تم تسريع ' + n);
+  },
+  speedall() {
+    if (S.gems < SHOP.speedGems) return;
+    const now = Date.now(); let n = 0;
+    S.plots.forEach(p => { if (p && p.readyAt > now) { p.readyAt = now; n++; } });
+    S.animals.forEach(a => { if (a.state === 'producing' && a.readyAt > now) { a.readyAt = now; n++; } });
+    if (!n) return toast('لا يوجد شيء ينمو الآن');
+    S.gems -= SHOP.speedGems; toast('⚡ أصبح ' + n + ' جاهزًا');
+  },
+  pricelvl() {
+    if (S.priceLvl >= SHOP.priceMax || S.gems < SHOP.priceGems) return;
+    S.gems -= SHOP.priceGems; S.priceLvl++;
+    toast('📈 الأسعار الآن +' + (S.priceLvl * 25) + '%');
+  },
+  gem2coin() {
+    if (S.gems < 1) return;
+    S.gems--; S.money += SHOP.gemToCoin;
+  },
+  coin2gem() {
+    if (S.money < SHOP.coinToGem) return;
+    S.money -= SHOP.coinToGem; S.gems++;
+  },
+  reset() {
+    if (confirm('هل تريد حذف كل التقدم والبدء من جديد؟')) { S = newState(); tab = 'farm'; }
+  }
+};
+
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-a]');
+  if (!el) return;
+  const r = actions[el.dataset.a](el.dataset);
+  if (r !== 'nosave') { checkLevel(); save(); render(); }
+});
+
+// تحديث الشاشة كل ثانية (ليعمل العدّاد)
+setInterval(render, 1000);
+render();
+
+// ============ 6) العمل بدون إنترنت (تسجيل خدمة التخزين) ============
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+}
+</script>
+</body>
+</html>
